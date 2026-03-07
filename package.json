@@ -10,7 +10,7 @@
     "dev": "npm run build --workspace @personal-care/shared-types && node ./node_modules/concurrently/dist/bin/concurrently.js \"npm run dev --workspace @personal-care/api\" \"npm run dev --workspace @personal-care/web\"",
     "build": "npm run build --workspace @personal-care/shared-types && npm run build --workspace @personal-care/api && npm run build --workspace @personal-care/web",
     "test": "npm run build --workspace @personal-care/shared-types && npm run test --workspace @personal-care/shared-types && npm run test --workspace @personal-care/api",
-    "lint": "npm run lint --workspace @personal-care/api && npm run lint --workspace @personal-care/web"
+    "lint": "npm run build --workspace @personal-care/shared-types && npm run lint --workspace @personal-care/api && npm run lint --workspace @personal-care/web"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
