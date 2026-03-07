@@ -80,10 +80,12 @@ export function createAuthRoutes(
       await metadataStore.updateSpreadsheetId(userId, spreadsheetId);
 
       const session = createSessionToken(userId);
+      const isProduction = env.NODE_ENV === "production";
       res.cookie("pc_session", session, {
         httpOnly: true,
-        sameSite: "lax",
-        secure: env.NODE_ENV === "production",
+        sameSite: isProduction ? "none" : "lax",
+        secure: isProduction,
+        path: "/",
         maxAge: 1000 * 60 * 60 * 24 * 30
       });
       res.redirect(`${env.WEB_ORIGIN}/auth/success`);
@@ -94,7 +96,12 @@ export function createAuthRoutes(
   });
 
   router.post("/logout", (_req, res) => {
-    res.clearCookie("pc_session");
+    const isProduction = env.NODE_ENV === "production";
+    res.clearCookie("pc_session", {
+      sameSite: isProduction ? "none" : "lax",
+      secure: isProduction,
+      path: "/"
+    });
     res.status(204).send();
   });
 
