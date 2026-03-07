@@ -11,11 +11,57 @@
 body {
   margin: 0;
   min-width: 320px;
-  background: linear-gradient(180deg, #edf2f7 0%, #f8fafc 100%);
+  background: radial-gradient(circle at 15% 10%, #d9f4ee 0%, transparent 45%),
+    radial-gradient(circle at 90% 80%, #d9eaf9 0%, transparent 45%),
+    linear-gradient(180deg, #eef3f7 0%, #f9fcfd 100%);
 }
 
 #root {
   min-height: 100vh;
+}
+
+.app-background {
+  min-height: 100vh;
+}
+
+.loading-screen {
+  @apply flex min-h-screen items-center justify-center bg-canvas font-body text-lg font-medium text-ink;
+}
+
+.hero-shell {
+  @apply rounded-3xl border border-white/70 bg-white/85 p-10 shadow-[0_20px_50px_rgba(11,114,133,0.14)] backdrop-blur;
+}
+
+.header-shell {
+  @apply bg-gradient-to-r from-[#0b7285] via-[#0f8c8f] to-[#22a56f] px-6 py-8 text-white shadow-[0_14px_35px_rgba(11,114,133,0.35)];
+}
+
+.tab-row {
+  @apply mx-auto mt-5 flex max-w-6xl flex-wrap gap-2 px-6;
+}
+
+.tab-chip {
+  @apply rounded-xl px-4 py-2 text-sm font-medium transition-all duration-200;
+}
+
+.tab-chip-active {
+  @apply bg-accent text-white shadow-[0_10px_20px_rgba(11,114,133,0.3)];
+}
+
+.tab-chip-idle {
+  @apply border border-slate-200 bg-white text-ink hover:border-accent/40 hover:text-accent;
+}
+
+.status-banner {
+  @apply mx-auto mt-4 max-w-6xl rounded-xl border border-accent/30 bg-accent/10 px-4 py-2 text-sm font-medium text-accent;
+}
+
+.content-grid {
+  @apply mx-auto grid max-w-6xl gap-4 px-6 py-6;
+}
+
+.panel-block {
+  @apply rounded-2xl border border-white/60 bg-white/85 p-4 shadow-[0_16px_30px_rgba(15,23,42,0.08)] backdrop-blur transition hover:-translate-y-[1px] hover:shadow-[0_18px_34px_rgba(15,23,42,0.12)];
 }
 
 .field {
@@ -30,10 +76,22 @@ body {
   @apply rounded-xl bg-accent px-4 py-2 text-sm font-medium text-white transition hover:opacity-95;
 }
 
+.btn-primary {
+  @apply rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white transition hover:opacity-95;
+}
+
 .btn-secondary {
   @apply rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800;
 }
 
 .btn-mini {
   @apply rounded-lg bg-accent px-3 py-1 text-xs font-medium text-white transition hover:opacity-90;
+}
+
+.btn-soft {
+  @apply rounded-xl border border-white/45 bg-white/10 px-4 py-2 text-sm text-white backdrop-blur transition hover:bg-white/20;
+}
+
+.btn-ghost {
+  @apply rounded-xl border border-slate-300 bg-transparent px-4 py-2 text-sm font-medium text-ink transition hover:border-accent hover:text-accent;
 }

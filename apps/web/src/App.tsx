@@ -45,10 +45,28 @@ function isQueuedResponse(value: unknown): value is { queued: true } {
 
 function Card({ title, value, sub }: { title: string; value: string; sub?: string }) {
   return (
-    <div className="rounded-2xl bg-panel p-4 shadow-panel">
-      <p className="text-xs uppercase tracking-[0.1em] text-muted">{title}</p>
+    <div className="panel-block">
+      <p className="text-[11px] uppercase tracking-[0.18em] text-muted">{title}</p>
       <p className="mt-2 text-3xl font-semibold text-ink">{value}</p>
       {sub ? <p className="mt-1 text-sm text-muted">{sub}</p> : null}
+    </div>
+  );
+}
+
+function ProgressMeter({ label, value }: { label: string; value: number }) {
+  const safeValue = Math.max(0, Math.min(100, Math.round(value)));
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-xs text-muted">
+        <span>{label}</span>
+        <span className="font-semibold text-ink">{safeValue}%</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-accent to-[#13b27b]"
+          style={{ width: `${safeValue}%` }}
+        />
+      </div>
     </div>
   );
 }
@@ -345,36 +363,57 @@ function App() {
     date: row.local_date,
     weight: Number(row.weight_kg)
   }));
+  const calorieProgress = dietSummary?.targetCalories
+    ? (dietSummary.consumedCalories / dietSummary.targetCalories) * 100
+    : 0;
+  const waterProgress = dietSummary?.waterTargetMl
+    ? (dietSummary.waterConsumedMl / dietSummary.waterTargetMl) * 100
+    : 0;
+  const streakProgress = Math.min(
+    100,
+    (streaks.current / Math.max(1, streaks.longest || 7)) * 100
+  );
+  const totalRunDistance = runs.reduce(
+    (acc, row) => acc + Number(row.distance_km || 0),
+    0
+  );
 
   if (loading) {
-    return <div className="p-8 font-body text-ink">Loading personal dashboard...</div>;
+    return <div className="loading-screen">Loading personal dashboard...</div>;
   }
 
   if (!me) {
     return (
-      <div className="min-h-screen bg-canvas px-6 py-10 font-body text-ink">
-        <div className="mx-auto max-w-2xl rounded-3xl bg-panel p-10 shadow-panel">
-          <p className="text-sm uppercase tracking-[0.16em] text-muted">Personal Care</p>
-          <h1 className="mt-3 font-display text-4xl font-semibold">
-            Professional health assistant for your daily execution
-          </h1>
-          <p className="mt-4 text-muted">
-            Sign in with Google to auto-create your personal tracking sheet in Drive.
-          </p>
-          <a
-            className="mt-8 inline-flex rounded-xl bg-accent px-5 py-3 font-medium text-white"
-            href={`${API_BASE_URL}/auth/google/start`}
-          >
-            Continue with Google
-          </a>
+      <div className="app-background font-body text-ink">
+        <div className="mx-auto max-w-5xl px-6 py-12">
+          <div className="hero-shell">
+            <p className="text-sm uppercase tracking-[0.16em] text-muted">Personal Care</p>
+            <h1 className="mt-3 font-display text-4xl font-semibold leading-tight md:text-5xl">
+              Professional personal assistant for health execution
+            </h1>
+            <p className="mt-4 max-w-3xl text-muted">
+              Track calories, workouts, streaks, and routines in one clean dashboard with Google authentication and persistent cloud storage.
+            </p>
+            <a
+              className="btn-primary mt-8 inline-flex"
+              href={`${API_BASE_URL}/auth/google/start`}
+            >
+              Authenticate with Google
+            </a>
+            <div className="mt-8 grid gap-3 md:grid-cols-3">
+              <Card title="Storage" value="Google Sheets" sub="Auto-created in your drive" />
+              <Card title="Focus" value="Daily Streak" sub="Strict routine discipline" />
+              <Card title="Platform" value="PWA Ready" sub="Offline queue + push alerts" />
+            </div>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-canvas font-body text-ink">
-      <header className="bg-gradient-to-r from-accent to-[#0ca678] px-6 py-8 text-white">
+    <div className="app-background font-body text-ink">
+      <header className="header-shell">
         <div className="mx-auto max-w-6xl">
           <p className="text-sm uppercase tracking-[0.18em] text-white/80">Personal Care Assistant</p>
           <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
@@ -384,14 +423,14 @@ function App() {
             </div>
             <div className="flex gap-3">
               <button
-                className="rounded-xl border border-white/40 px-4 py-2 text-sm"
+                className="btn-soft"
                 onClick={enablePushNotifications}
                 type="button"
               >
                 Enable Push
               </button>
               <button
-                className="rounded-xl border border-white/40 px-4 py-2 text-sm"
+                className="btn-soft"
                 onClick={async () => {
                   await apiPost("/auth/logout", {});
                   window.location.reload();
@@ -405,12 +444,12 @@ function App() {
         </div>
       </header>
 
-      <nav className="mx-auto mt-6 flex max-w-6xl flex-wrap gap-2 px-6">
+      <nav className="tab-row">
         {tabs.map((tab) => (
           <button
             key={tab.key}
-            className={`rounded-xl px-4 py-2 text-sm ${
-              activeTab === tab.key ? "bg-accent text-white" : "bg-panel text-ink shadow-panel"
+            className={`tab-chip ${
+              activeTab === tab.key ? "tab-chip-active" : "tab-chip-idle"
             }`}
             onClick={() => setActiveTab(tab.key)}
             type="button"
@@ -421,10 +460,10 @@ function App() {
       </nav>
 
       {statusLine ? (
-        <div className="mx-auto mt-4 max-w-6xl px-6 text-sm text-accent">{statusLine}</div>
+        <div className="status-banner">{statusLine}</div>
       ) : null}
 
-      <main className="mx-auto grid max-w-6xl gap-4 px-6 py-6">
+      <main className="content-grid">
         {activeTab === "dashboard" ? (
           <>
             <section className="grid gap-4 md:grid-cols-4">
@@ -434,7 +473,7 @@ function App() {
               <Card title="Streak" value={`${streaks.current} days`} sub={`Best ${streaks.longest} days`} />
             </section>
             <section className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-2xl bg-panel p-4 shadow-panel">
+              <div className="panel-block">
                 <h2 className="font-display text-xl">Weight Progress</h2>
                 <div className="mt-3 h-56">
                   <ResponsiveContainer width="100%" height="100%">
@@ -447,17 +486,20 @@ function App() {
                   </ResponsiveContainer>
                 </div>
               </div>
-              <div className="rounded-2xl bg-panel p-4 shadow-panel">
+              <div className="panel-block">
                 <h2 className="font-display text-xl">Execution Status</h2>
                 <p className="mt-3 text-sm text-muted">
                   Status: <span className="font-semibold text-ink">{dietSummary?.status ?? "n/a"}</span>
                 </p>
-                <p className="mt-2 text-sm text-muted">
-                  Required habit completion drives strict streak reset at day close.
-                </p>
-                <p className="mt-2 text-sm text-muted">
-                  Adherence score: <span className="font-semibold text-ink">{scoreboard?.adherencePercent ?? 0}%</span>
-                </p>
+                <div className="mt-4 space-y-3">
+                  <ProgressMeter label="Calorie target alignment" value={calorieProgress} />
+                  <ProgressMeter label="Hydration target alignment" value={waterProgress} />
+                  <ProgressMeter label="Streak momentum" value={streakProgress} />
+                </div>
+                <div className="mt-4 rounded-xl bg-canvas p-3 text-sm text-muted">
+                  Distance logged this cycle:
+                  <span className="ml-1 font-semibold text-ink">{totalRunDistance.toFixed(1)} km</span>
+                </div>
               </div>
             </section>
           </>
@@ -465,7 +507,7 @@ function App() {
 
         {activeTab === "diet" ? (
           <section className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-2xl bg-panel p-4 shadow-panel">
+            <div className="panel-block">
               <h2 className="font-display text-xl">Log Calories</h2>
               <form className="mt-4 grid gap-2" onSubmit={handleFoodSubmit}>
                 <input className="field" placeholder="Food name" value={foodForm.name} onChange={(e) => setFoodForm((prev) => ({ ...prev, name: e.target.value }))} />
@@ -484,7 +526,7 @@ function App() {
                 ))}
               </ul>
             </div>
-            <div className="rounded-2xl bg-panel p-4 shadow-panel">
+            <div className="panel-block">
               <h2 className="font-display text-xl">Hydration & Weight</h2>
               <form className="mt-4 grid gap-2" onSubmit={handleWaterSubmit}>
                 <input className="field" placeholder="Water ml" value={waterMl} onChange={(e) => setWaterMl(e.target.value)} />
@@ -498,7 +540,7 @@ function App() {
                 Daily calories: {dietSummary?.consumedCalories ?? 0} / {dietSummary?.targetCalories ?? 0}
               </div>
             </div>
-            <div className="rounded-2xl bg-panel p-4 shadow-panel md:col-span-2">
+            <div className="panel-block md:col-span-2">
               <h3 className="font-display text-lg">Today food logs</h3>
               <div className="mt-2 grid gap-2 md:grid-cols-2">
                 {foods.slice(-8).map((row) => (
@@ -513,7 +555,7 @@ function App() {
 
         {activeTab === "exercise" ? (
           <section className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-2xl bg-panel p-4 shadow-panel">
+            <div className="panel-block">
               <h2 className="font-display text-xl">Jog Tracking</h2>
               <form className="mt-4 grid gap-2" onSubmit={handleRunSubmit}>
                 <input className="field" placeholder="Distance (km)" value={runForm.distanceKm} onChange={(e) => setRunForm((prev) => ({ ...prev, distanceKm: e.target.value }))} />
@@ -536,7 +578,7 @@ function App() {
                 <button className="btn-secondary" type="submit">Add lap split</button>
               </form>
             </div>
-            <div className="rounded-2xl bg-panel p-4 shadow-panel">
+            <div className="panel-block">
               <h2 className="font-display text-xl">Bodyweight Workout Plans</h2>
               <form className="mt-4 grid gap-2" onSubmit={handleWorkoutSubmit}>
                 <input className="field" placeholder="Workout title" value={workoutForm.title} onChange={(e) => setWorkoutForm((prev) => ({ ...prev, title: e.target.value }))} />
@@ -568,7 +610,7 @@ function App() {
 
         {activeTab === "routine" ? (
           <section className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-2xl bg-panel p-4 shadow-panel">
+            <div className="panel-block">
               <h2 className="font-display text-xl">Daily Personal Routine</h2>
               <form className="mt-4 grid gap-2" onSubmit={handleHabitSubmit}>
                 <input className="field" placeholder="Task title" value={habitForm.title} onChange={(e) => setHabitForm((prev) => ({ ...prev, title: e.target.value }))} />
@@ -590,7 +632,7 @@ function App() {
                 ))}
               </div>
             </div>
-            <div className="rounded-2xl bg-panel p-4 shadow-panel">
+            <div className="panel-block">
               <h2 className="font-display text-xl">Reminder Schedule</h2>
               <form className="mt-4 grid gap-2" onSubmit={handleReminderSubmit}>
                 <input className="field" placeholder="Reminder title" value={reminderForm.title} onChange={(e) => setReminderForm((prev) => ({ ...prev, title: e.target.value }))} />
@@ -610,7 +652,7 @@ function App() {
 
         {activeTab === "profile" ? (
           <section className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-2xl bg-panel p-4 shadow-panel">
+            <div className="panel-block">
               <h2 className="font-display text-xl">Profile & Score</h2>
               <p className="mt-3 text-sm text-muted">{me.email}</p>
               <div className="mt-4 grid grid-cols-2 gap-2">
@@ -620,7 +662,7 @@ function App() {
                 <Card title="Best streak" value={String(streaks.longest)} />
               </div>
             </div>
-            <div className="rounded-2xl bg-panel p-4 shadow-panel">
+            <div className="panel-block">
               <h2 className="font-display text-xl">Weekly Body Check-in</h2>
               <form className="mt-4 grid gap-2" onSubmit={handleMetricSubmit}>
                 <input className="field" placeholder="Weight kg" value={metricForm.weightKg} onChange={(e) => setMetricForm((prev) => ({ ...prev, weightKg: e.target.value }))} />
@@ -644,3 +686,4 @@ function App() {
 }
 
 export default App;
+
