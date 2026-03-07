@@ -44,6 +44,11 @@ interface WeeklyInsights {
   goalType: "deficit" | "surplus" | "maintenance";
 }
 
+interface DietSummaryResponse extends DailyEnergySummary {
+  tdee: number;
+  safetyWarnings: string[];
+}
+
 type GenericRow = Record<string, string>;
 interface GpsPoint {
   lat: number;
@@ -126,7 +131,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [statusLine, setStatusLine] = useState<string>("");
 
-  const [dietSummary, setDietSummary] = useState<DailyEnergySummary | null>(null);
+  const [dietSummary, setDietSummary] = useState<DietSummaryResponse | null>(null);
   const [foods, setFoods] = useState<GenericRow[]>([]);
   const [weights, setWeights] = useState<GenericRow[]>([]);
   const [runs, setRuns] = useState<GenericRow[]>([]);
@@ -143,6 +148,18 @@ function App() {
   const [waterMl, setWaterMl] = useState("300");
   const [weightKg, setWeightKg] = useState("70");
   const [foodSearchTerm, setFoodSearchTerm] = useState("");
+  const [goalForm, setGoalForm] = useState({
+    mode: "weekly_rate",
+    type: "deficit",
+    currentWeightKg: "70",
+    targetWeightKg: "65",
+    targetDate: "",
+    weeklyRateKg: "0.4",
+    activityMultiplier: "1.35",
+    age: "28",
+    sex: "male",
+    heightCm: "170"
+  });
 
   const [runForm, setRunForm] = useState({ distanceKm: "", durationSec: "", notes: "" });
   const [lapForm, setLapForm] = useState({
@@ -219,7 +236,7 @@ function App() {
         weeklyData,
         metricData
       ] = await Promise.all([
-        apiGet<DailyEnergySummary>("/diet/summary"),
+        apiGet<DietSummaryResponse>("/diet/summary"),
         apiGet<GenericRow[]>("/diet/foods"),
         apiGet<GenericRow[]>("/diet/weight"),
         apiGet<GenericRow[]>("/exercise/runs"),
@@ -307,10 +324,31 @@ function App() {
 
   async function handleWeightSubmit(e: FormEvent) {
     e.preventDefault();
-    const result = await apiPost("/diet/weight", { weightKg: Number(weightKg) });
+    const result = await apiPost("/diet/weight", {
+      weightKg: Number(weightKg),
+      goalPlan: {
+        mode: goalForm.mode as "target_date" | "weekly_rate",
+        type: goalForm.type as "deficit" | "surplus" | "maintenance",
+        currentWeightKg: Number(goalForm.currentWeightKg || weightKg),
+        targetWeightKg: Number(goalForm.targetWeightKg || weightKg),
+        targetDate:
+          goalForm.mode === "target_date" && goalForm.targetDate
+            ? goalForm.targetDate
+            : undefined,
+        weeklyRateKg:
+          goalForm.mode === "weekly_rate"
+            ? Number(goalForm.weeklyRateKg || 0.4)
+            : undefined,
+        activityMultiplier: Number(goalForm.activityMultiplier || 1.35),
+        age: Number(goalForm.age || 28),
+        sex: goalForm.sex as "male" | "female",
+        heightCm: Number(goalForm.heightCm || 170)
+      }
+    });
     if (isQueuedResponse(result)) {
       setStatusLine("Weight log queued for sync.");
     }
+    setGoalForm((prev) => ({ ...prev, currentWeightKg: weightKg }));
     setWeightKg("");
     await loadEverything();
   }
@@ -827,9 +865,47 @@ function App() {
                 <input className="field" placeholder="Weight kg" value={weightKg} onChange={(e) => setWeightKg(e.target.value)} />
                 <button className="btn-secondary" type="submit">Log weight</button>
               </form>
+              <div className="mt-4 rounded-xl bg-canvas p-3">
+                <p className="text-xs uppercase tracking-[0.15em] text-muted">Calorie Goal Planner</p>
+                <div className="mt-3 grid gap-2 md:grid-cols-2">
+                  <select className="field" value={goalForm.mode} onChange={(e) => setGoalForm((prev) => ({ ...prev, mode: e.target.value }))}>
+                    <option value="weekly_rate">Weekly rate</option>
+                    <option value="target_date">Target date</option>
+                  </select>
+                  <select className="field" value={goalForm.type} onChange={(e) => setGoalForm((prev) => ({ ...prev, type: e.target.value }))}>
+                    <option value="deficit">Deficit</option>
+                    <option value="maintenance">Maintenance</option>
+                    <option value="surplus">Surplus</option>
+                  </select>
+                  <input className="field" placeholder="Current weight kg" value={goalForm.currentWeightKg} onChange={(e) => setGoalForm((prev) => ({ ...prev, currentWeightKg: e.target.value }))} />
+                  <input className="field" placeholder="Target weight kg" value={goalForm.targetWeightKg} onChange={(e) => setGoalForm((prev) => ({ ...prev, targetWeightKg: e.target.value }))} />
+                  {goalForm.mode === "target_date" ? (
+                    <input className="field" placeholder="Target date YYYY-MM-DD" value={goalForm.targetDate} onChange={(e) => setGoalForm((prev) => ({ ...prev, targetDate: e.target.value }))} />
+                  ) : (
+                    <input className="field" placeholder="Weekly rate kg" value={goalForm.weeklyRateKg} onChange={(e) => setGoalForm((prev) => ({ ...prev, weeklyRateKg: e.target.value }))} />
+                  )}
+                  <input className="field" placeholder="Activity multiplier (1.1-2.5)" value={goalForm.activityMultiplier} onChange={(e) => setGoalForm((prev) => ({ ...prev, activityMultiplier: e.target.value }))} />
+                  <input className="field" placeholder="Age" value={goalForm.age} onChange={(e) => setGoalForm((prev) => ({ ...prev, age: e.target.value }))} />
+                  <input className="field" placeholder="Height cm" value={goalForm.heightCm} onChange={(e) => setGoalForm((prev) => ({ ...prev, heightCm: e.target.value }))} />
+                  <select className="field" value={goalForm.sex} onChange={(e) => setGoalForm((prev) => ({ ...prev, sex: e.target.value }))}>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                  </select>
+                </div>
+              </div>
               <div className="mt-4 text-sm text-muted">
                 Daily calories: {dietSummary?.consumedCalories ?? 0} / {dietSummary?.targetCalories ?? 0}
               </div>
+              <div className="mt-1 text-sm text-muted">
+                Estimated TDEE: {dietSummary?.tdee ?? 0} kcal
+              </div>
+              {dietSummary?.safetyWarnings?.length ? (
+                <div className="mt-3 rounded-lg border border-warn/30 bg-warn/10 p-2 text-sm text-warn">
+                  {dietSummary.safetyWarnings.map((warning, idx) => (
+                    <div key={`warn-${idx}`}>{warning}</div>
+                  ))}
+                </div>
+              ) : null}
             </div>
             <div className="panel-block md:col-span-2">
               <h3 className="font-display text-lg">Today food logs</h3>
