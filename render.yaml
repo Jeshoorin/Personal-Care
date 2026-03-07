@@ -5,7 +5,7 @@ services:
     plan: free
     autoDeploy: false
     healthCheckPath: /health
-    buildCommand: npm ci && npm run build --workspace @personal-care/shared-types && npm run build --workspace @personal-care/api
+    buildCommand: npm ci --include=dev && npm run build --workspace @personal-care/shared-types && npm run build --workspace @personal-care/api
     startCommand: npm run start --workspace @personal-care/api
     envVars:
       - key: NODE_ENV
