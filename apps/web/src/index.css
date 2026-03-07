@@ -1,0 +1,39 @@
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Work+Sans:wght@400;500;600&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: linear-gradient(180deg, #edf2f7 0%, #f8fafc 100%);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.field {
+  @apply w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-ink shadow-sm outline-none transition;
+}
+
+.field:focus {
+  @apply border-accent ring-2 ring-accent/20;
+}
+
+.btn {
+  @apply rounded-xl bg-accent px-4 py-2 text-sm font-medium text-white transition hover:opacity-95;
+}
+
+.btn-secondary {
+  @apply rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800;
+}
+
+.btn-mini {
+  @apply rounded-lg bg-accent px-3 py-1 text-xs font-medium text-white transition hover:opacity-90;
+}
