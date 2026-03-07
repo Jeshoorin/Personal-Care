@@ -29,6 +29,21 @@ interface StreakData {
   longest: number;
 }
 
+interface WeeklyInsights {
+  weekStart: string;
+  weekEnd: string;
+  previousPeriodStart: string;
+  previousPeriodEnd: string;
+  daysElapsed: number;
+  consistencyPercent: number;
+  adherencePercent: number;
+  improvementPercent: number;
+  thisPeriodDistanceKm: number;
+  previousPeriodDistanceKm: number;
+  weightChangeKg: number;
+  goalType: "deficit" | "surplus" | "maintenance";
+}
+
 type GenericRow = Record<string, string>;
 interface GpsPoint {
   lat: number;
@@ -95,6 +110,16 @@ function haversineDistanceKm(a: GpsPoint, b: GpsPoint): number {
   return 2 * earthRadiusKm * Math.asin(Math.sqrt(h));
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function toFiniteNumber(value: string | undefined): number | null {
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState<TabKey>("dashboard");
   const [me, setMe] = useState<MeResponse | null>(null);
@@ -110,6 +135,7 @@ function App() {
   const [reminders, setReminders] = useState<GenericRow[]>([]);
   const [scoreboard, setScoreboard] = useState<Scoreboard | null>(null);
   const [streaks, setStreaks] = useState<StreakData>({ current: 0, longest: 0 });
+  const [weeklyInsights, setWeeklyInsights] = useState<WeeklyInsights | null>(null);
   const [metrics, setMetrics] = useState<GenericRow[]>([]);
   const [foodSearch, setFoodSearch] = useState<GenericRow[]>([]);
 
@@ -144,7 +170,10 @@ function App() {
   const [metricForm, setMetricForm] = useState({
     weightKg: "",
     waistCm: "",
-    chestCm: ""
+    chestCm: "",
+    hipCm: "",
+    thighCm: "",
+    armCm: ""
   });
   const [gpsTracking, setGpsTracking] = useState(false);
   const [gpsError, setGpsError] = useState("");
@@ -187,6 +216,7 @@ function App() {
         reminderData,
         scoreData,
         streakData,
+        weeklyData,
         metricData
       ] = await Promise.all([
         apiGet<DailyEnergySummary>("/diet/summary"),
@@ -198,6 +228,7 @@ function App() {
         apiGet<GenericRow[]>("/reminders"),
         apiGet<Scoreboard>("/profile/scoreboard"),
         apiGet<StreakData>("/profile/streaks"),
+        apiGet<WeeklyInsights>("/profile/weekly-insights"),
         apiGet<GenericRow[]>("/metrics/body")
       ]);
 
@@ -210,6 +241,7 @@ function App() {
       setReminders(reminderData);
       setScoreboard(scoreData);
       setStreaks(streakData);
+      setWeeklyInsights(weeklyData);
       setMetrics(metricData);
     } catch {
       setMe(null);
@@ -526,12 +558,22 @@ function App() {
     const result = await apiPost("/metrics/body", {
       weightKg: Number(metricForm.weightKg),
       waistCm: metricForm.waistCm ? Number(metricForm.waistCm) : undefined,
-      chestCm: metricForm.chestCm ? Number(metricForm.chestCm) : undefined
+      chestCm: metricForm.chestCm ? Number(metricForm.chestCm) : undefined,
+      hipCm: metricForm.hipCm ? Number(metricForm.hipCm) : undefined,
+      thighCm: metricForm.thighCm ? Number(metricForm.thighCm) : undefined,
+      armCm: metricForm.armCm ? Number(metricForm.armCm) : undefined
     });
     if (isQueuedResponse(result)) {
       setStatusLine("Body metrics queued for sync.");
     }
-    setMetricForm({ weightKg: "", waistCm: "", chestCm: "" });
+    setMetricForm({
+      weightKg: "",
+      waistCm: "",
+      chestCm: "",
+      hipCm: "",
+      thighCm: "",
+      armCm: ""
+    });
     await loadEverything();
   }
 
@@ -545,19 +587,80 @@ function App() {
     weight: Number(row.weight_kg)
   }));
   const calorieProgress = dietSummary?.targetCalories
-    ? (dietSummary.consumedCalories / dietSummary.targetCalories) * 100
+    ? clamp((dietSummary.consumedCalories / dietSummary.targetCalories) * 100, 0, 100)
     : 0;
   const waterProgress = dietSummary?.waterTargetMl
-    ? (dietSummary.waterConsumedMl / dietSummary.waterTargetMl) * 100
+    ? clamp((dietSummary.waterConsumedMl / dietSummary.waterTargetMl) * 100, 0, 100)
     : 0;
-  const streakProgress = Math.min(
-    100,
-    (streaks.current / Math.max(1, streaks.longest || 7)) * 100
-  );
+  const streakProgress = clamp((streaks.current / Math.max(1, streaks.longest || 7)) * 100, 0, 100);
   const totalRunDistance = runs.reduce(
     (acc, row) => acc + Number(row.distance_km || 0),
     0
   );
+  const metricTrendRows = useMemo(() => {
+    const sorted = [...metrics].sort((a, b) => {
+      const aTime = new Date(a.created_at || `${a.local_date}T00:00:00Z`).getTime();
+      const bTime = new Date(b.created_at || `${b.local_date}T00:00:00Z`).getTime();
+      return aTime - bTime;
+    });
+    if (sorted.length === 0) {
+      return [] as Array<{
+        key: string;
+        label: string;
+        currentText: string;
+        deltaText: string;
+        target: string;
+        statusLabel: string;
+        statusClass: string;
+      }>;
+    }
+
+    const latest = sorted[sorted.length - 1];
+    const previous = sorted.length > 1 ? sorted[sorted.length - 2] : null;
+    const latestDate = new Date(`${latest.local_date || "1970-01-01"}T00:00:00Z`);
+    const previousDate = previous
+      ? new Date(`${previous.local_date || "1970-01-01"}T00:00:00Z`)
+      : null;
+    const daysBetween = previousDate
+      ? Math.max(1, Math.round((latestDate.getTime() - previousDate.getTime()) / 86_400_000))
+      : 7;
+
+    const definitions = [
+      { key: "weight_kg", label: "Weight", unit: "kg", min: -0.8, max: -0.2, target: "-0.2 to -0.8 kg/week" },
+      { key: "waist_cm", label: "Waist", unit: "cm", min: -1.5, max: -0.2, target: "-0.2 to -1.5 cm/week" },
+      { key: "chest_cm", label: "Chest", unit: "cm", min: -0.8, max: 0.4, target: "Stable (-0.8 to +0.4 cm/week)" },
+      { key: "hip_cm", label: "Hip", unit: "cm", min: -1.5, max: -0.2, target: "-0.2 to -1.5 cm/week" },
+      { key: "thigh_cm", label: "Thigh", unit: "cm", min: -1.2, max: -0.1, target: "-0.1 to -1.2 cm/week" },
+      { key: "arm_cm", label: "Arm", unit: "cm", min: -0.8, max: 0.4, target: "Stable (-0.8 to +0.4 cm/week)" }
+    ] as const;
+
+    return definitions.map((definition) => {
+      const current = toFiniteNumber(latest[definition.key]);
+      const previousValue = previous ? toFiniteNumber(previous[definition.key]) : null;
+      const weeklyDelta =
+        current !== null && previousValue !== null
+          ? ((current - previousValue) / daysBetween) * 7
+          : null;
+
+      const onTarget =
+        weeklyDelta !== null && weeklyDelta >= definition.min && weeklyDelta <= definition.max;
+
+      return {
+        key: definition.key,
+        label: definition.label,
+        currentText: current !== null ? `${current.toFixed(1)} ${definition.unit}` : "-",
+        deltaText:
+          weeklyDelta !== null
+            ? `${weeklyDelta > 0 ? "+" : ""}${weeklyDelta.toFixed(2)} ${definition.unit}/wk`
+            : "Need one more weekly entry",
+        target: definition.target,
+        statusLabel:
+          weeklyDelta === null ? "Not enough data" : onTarget ? "On target" : "Adjust plan",
+        statusClass:
+          weeklyDelta === null ? "text-muted" : onTarget ? "text-success" : "text-warn"
+      };
+    });
+  }, [metrics]);
 
   if (loading) {
     return <div className="loading-screen">Loading personal dashboard...</div>;
@@ -763,7 +866,7 @@ function App() {
                   ? "Tracking in progress. Keep the screen on for best accuracy."
                   : "Use this when you want auto distance and 1 km lap splits."}
               </p>
-              {gpsError ? <p className="mt-2 text-sm text-alert">{gpsError}</p> : null}
+              {gpsError ? <p className="mt-2 text-sm text-warn">{gpsError}</p> : null}
               <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4">
                 <Card title="Distance" value={`${gpsDistanceKm.toFixed(2)} km`} />
                 <Card title="Duration" value={formatDuration(gpsDurationSec)} />
@@ -886,21 +989,98 @@ function App() {
                 <Card title="Current streak" value={String(streaks.current)} />
                 <Card title="Best streak" value={String(streaks.longest)} />
               </div>
+              <p className="mt-4 text-sm text-muted">
+                Required-goal adherence:{" "}
+                <span className="font-semibold text-ink">
+                  {scoreboard?.adherencePercent ?? 0}%
+                </span>
+              </p>
             </div>
             <div className="panel-block">
+              <h2 className="font-display text-xl">Weekly Performance Card</h2>
+              {weeklyInsights ? (
+                <>
+                  <p className="mt-3 text-sm text-muted">
+                    Window: {weeklyInsights.weekStart} to {weeklyInsights.weekEnd} ({weeklyInsights.daysElapsed} day
+                    {weeklyInsights.daysElapsed > 1 ? "s" : ""})
+                  </p>
+                  <div className="mt-4 space-y-3">
+                    <ProgressMeter label="Consistency" value={weeklyInsights.consistencyPercent} />
+                    <ProgressMeter label="Adherence" value={weeklyInsights.adherencePercent} />
+                    <ProgressMeter label="Improvement" value={weeklyInsights.improvementPercent} />
+                  </div>
+                  <div className="mt-4 grid gap-2 text-sm md:grid-cols-2">
+                    <div className="rounded-lg bg-canvas p-2">
+                      Distance: {weeklyInsights.thisPeriodDistanceKm.toFixed(2)} km
+                    </div>
+                    <div className="rounded-lg bg-canvas p-2">
+                      Previous: {weeklyInsights.previousPeriodDistanceKm.toFixed(2)} km
+                    </div>
+                    <div className="rounded-lg bg-canvas p-2">
+                      Weight delta: {weeklyInsights.weightChangeKg > 0 ? "-" : "+"}
+                      {Math.abs(weeklyInsights.weightChangeKg).toFixed(2)} kg
+                    </div>
+                    <div className="rounded-lg bg-canvas p-2">
+                      Goal mode: {weeklyInsights.goalType}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <p className="mt-3 text-sm text-muted">No weekly insight data yet.</p>
+              )}
+            </div>
+            <div className="panel-block md:col-span-2">
               <h2 className="font-display text-xl">Weekly Body Check-in</h2>
-              <form className="mt-4 grid gap-2" onSubmit={handleMetricSubmit}>
+              <form className="mt-4 grid gap-2 md:grid-cols-3" onSubmit={handleMetricSubmit}>
                 <input className="field" placeholder="Weight kg" value={metricForm.weightKg} onChange={(e) => setMetricForm((prev) => ({ ...prev, weightKg: e.target.value }))} />
                 <input className="field" placeholder="Waist cm" value={metricForm.waistCm} onChange={(e) => setMetricForm((prev) => ({ ...prev, waistCm: e.target.value }))} />
                 <input className="field" placeholder="Chest cm" value={metricForm.chestCm} onChange={(e) => setMetricForm((prev) => ({ ...prev, chestCm: e.target.value }))} />
-                <button className="btn" type="submit">Log body metrics</button>
+                <input className="field" placeholder="Hip cm" value={metricForm.hipCm} onChange={(e) => setMetricForm((prev) => ({ ...prev, hipCm: e.target.value }))} />
+                <input className="field" placeholder="Thigh cm" value={metricForm.thighCm} onChange={(e) => setMetricForm((prev) => ({ ...prev, thighCm: e.target.value }))} />
+                <input className="field" placeholder="Arm cm" value={metricForm.armCm} onChange={(e) => setMetricForm((prev) => ({ ...prev, armCm: e.target.value }))} />
+                <button className="btn md:col-span-3" type="submit">Log body metrics</button>
               </form>
-              <div className="mt-4 space-y-2 text-sm">
-                {metrics.slice(-6).map((entry) => (
-                  <div key={entry.entry_id} className="rounded-lg bg-canvas p-2">
-                    {entry.local_date}: {entry.weight_kg}kg / waist {entry.waist_cm || "-"}cm
-                  </div>
-                ))}
+
+              <div className="mt-4 overflow-x-auto">
+                <table className="min-w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-muted">
+                      <th className="px-2 py-2">Metric</th>
+                      <th className="px-2 py-2">Current</th>
+                      <th className="px-2 py-2">Delta / week</th>
+                      <th className="px-2 py-2">Target</th>
+                      <th className="px-2 py-2">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metricTrendRows.map((row) => (
+                      <tr key={row.key} className="border-b border-slate-100">
+                        <td className="px-2 py-2 font-medium text-ink">{row.label}</td>
+                        <td className="px-2 py-2 text-muted">{row.currentText}</td>
+                        <td className="px-2 py-2 text-muted">{row.deltaText}</td>
+                        <td className="px-2 py-2 text-muted">{row.target}</td>
+                        <td className={`px-2 py-2 font-medium ${row.statusClass}`}>{row.statusLabel}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="mt-4 grid gap-2 text-sm md:grid-cols-2">
+                {metrics
+                  .slice(-6)
+                  .reverse()
+                  .map((entry) => (
+                    <div key={entry.entry_id} className="rounded-lg bg-canvas p-2">
+                      <div className="font-medium text-ink">{entry.local_date}</div>
+                      <div className="text-muted">
+                        Weight {entry.weight_kg || "-"}kg | Waist {entry.waist_cm || "-"}cm | Chest {entry.chest_cm || "-"}cm
+                      </div>
+                      <div className="text-muted">
+                        Hip {entry.hip_cm || "-"}cm | Thigh {entry.thigh_cm || "-"}cm | Arm {entry.arm_cm || "-"}cm
+                      </div>
+                    </div>
+                  ))}
               </div>
             </div>
           </section>
