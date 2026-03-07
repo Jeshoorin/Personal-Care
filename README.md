@@ -22,7 +22,7 @@ Personal health assistant PWA with React + Node.js, Google OAuth, Google Sheets 
 
 - `npm run dev`: run API and web in parallel
 - `npm run build`: build shared package, API, and web
-- `npm run test`: run shared + API tests
+- `npm run test`: run shared + API tests.
 
 ## CI/CD
 
