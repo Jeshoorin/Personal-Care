@@ -506,12 +506,19 @@ function App() {
   }
 
   async function completeWorkout(workoutId: string) {
-    const result = await apiPost(`/exercise/workouts/${workoutId}/complete`, {
+    const result = await apiPost<{ ok: true; progressedToWeek: number | null }>(
+      `/exercise/workouts/${workoutId}/complete`,
+      {
       durationMin: 30,
       intensity: "moderate"
-    });
+      }
+    );
     if (isQueuedResponse(result)) {
       setStatusLine("Workout completion queued for sync.");
+    } else if (result.progressedToWeek) {
+      setStatusLine(`Workout completed. Next week plan generated (Week ${result.progressedToWeek}).`);
+    } else {
+      setStatusLine("Workout session completed.");
     }
     await loadEverything();
   }
@@ -925,7 +932,10 @@ function App() {
               <div className="mt-4 space-y-2">
                 {workouts.slice(-6).map((workout) => (
                   <div key={workout.workout_id} className="flex items-center justify-between rounded-lg bg-canvas p-2 text-sm">
-                    <span>{workout.title} ({workout.level})</span>
+                    <span>
+                      {workout.title} ({workout.level}) | week {workout.week_index || "1"} | target{" "}
+                      {workout.target_sessions || "3"} sessions
+                    </span>
                     <button className="btn-mini" onClick={() => void completeWorkout(workout.workout_id)} type="button">
                       Complete
                     </button>

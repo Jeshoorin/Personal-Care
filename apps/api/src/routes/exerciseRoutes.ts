@@ -30,6 +30,34 @@ const completeWorkoutSchema = z.object({
   intensity: z.enum(["low", "moderate", "high"]).default("moderate")
 });
 
+const STARTER_WORKOUTS = [
+  {
+    title: "Starter Bodyweight Cut",
+    level: "beginner",
+    focus: "fat_loss",
+    weekIndex: 1,
+    targetSessions: 3
+  },
+  {
+    title: "Strength Builder Circuit",
+    level: "intermediate",
+    focus: "strength",
+    weekIndex: 1,
+    targetSessions: 4
+  },
+  {
+    title: "Mobility and Core Flow",
+    level: "advanced",
+    focus: "mobility",
+    weekIndex: 1,
+    targetSessions: 5
+  }
+] as const;
+
+function normalizeWorkoutTitle(title: string): string {
+  return title.replace(/\s-\sWeek\s\d+$/i, "").trim();
+}
+
 export function createExerciseRoutes(
   sheetsService: SheetsService,
   gamificationService: GamificationService
@@ -89,6 +117,21 @@ export function createExerciseRoutes(
   router.get("/workouts", async (req, res) => {
     const user = req.user!;
     const rows = await sheetsService.listRows(user, "WorkoutPlans");
+    if (rows.length === 0) {
+      for (const template of STARTER_WORKOUTS) {
+        await sheetsService.appendRow(user, "WorkoutPlans", {
+          workout_id: uuidv4(),
+          title: template.title,
+          level: template.level,
+          focus: template.focus,
+          week_index: template.weekIndex,
+          target_sessions: template.targetSessions
+        });
+      }
+      const seeded = await sheetsService.listRows(user, "WorkoutPlans");
+      res.json(seeded);
+      return;
+    }
     res.json(rows);
   });
 
@@ -126,7 +169,53 @@ export function createExerciseRoutes(
       intensity: parsed.data.intensity
     });
     await gamificationService.recordScoreEvent(user, "workout_completed");
-    res.status(201).json({ ok: true });
+
+    const plans = await sheetsService.listRows(user, "WorkoutPlans");
+    const sessions = await sheetsService.listRows(user, "WorkoutSessions");
+    const currentPlan = plans.find((plan) => plan.workout_id === req.params.id);
+
+    let progressedToWeek: number | null = null;
+    if (currentPlan) {
+      const targetSessions = Math.max(1, Number(currentPlan.target_sessions || 3));
+      const completedSessions = sessions.filter(
+        (session) => session.workout_id === req.params.id && session.completed === "true"
+      ).length;
+
+      if (completedSessions === targetSessions) {
+        const currentWeek = Math.max(1, Number(currentPlan.week_index || 1));
+        const nextWeek = currentWeek + 1;
+        const baseTitle = normalizeWorkoutTitle(currentPlan.title || "Bodyweight Plan");
+        const nextTitle = `${baseTitle} - Week ${nextWeek}`;
+
+        const nextWeekExists = plans.some((plan) => {
+          const planWeek = Number(plan.week_index || 0);
+          return (
+            normalizeWorkoutTitle(plan.title || "") === baseTitle &&
+            plan.level === currentPlan.level &&
+            plan.focus === currentPlan.focus &&
+            planWeek === nextWeek
+          );
+        });
+
+        if (!nextWeekExists) {
+          const nextTarget = Math.min(
+            currentPlan.level === "advanced" ? 7 : 6,
+            targetSessions + 1
+          );
+          await sheetsService.appendRow(user, "WorkoutPlans", {
+            workout_id: uuidv4(),
+            title: nextTitle,
+            level: currentPlan.level,
+            focus: currentPlan.focus,
+            week_index: nextWeek,
+            target_sessions: nextTarget
+          });
+          progressedToWeek = nextWeek;
+        }
+      }
+    }
+
+    res.status(201).json({ ok: true, progressedToWeek });
   });
 
   return router;
