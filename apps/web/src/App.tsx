@@ -2,7 +2,7 @@ import {
   calculateWaterTargetMl,
   type DailyEnergySummary
 } from "@personal-care/shared-types";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { apiGet, apiPost, syncOutbox, API_BASE_URL } from "./lib/api";
 import { registerPush } from "./lib/push";
@@ -30,6 +30,11 @@ interface StreakData {
 }
 
 type GenericRow = Record<string, string>;
+interface GpsPoint {
+  lat: number;
+  lon: number;
+  timestamp: number;
+}
 
 const tabs: Array<{ key: TabKey; label: string }> = [
   { key: "dashboard", label: "Dashboard" },
@@ -69,6 +74,25 @@ function ProgressMeter({ label, value }: { label: string; value: number }) {
       </div>
     </div>
   );
+}
+
+function formatDuration(totalSeconds: number): string {
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
+  return `${mins}m ${secs}s`;
+}
+
+function haversineDistanceKm(a: GpsPoint, b: GpsPoint): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const earthRadiusKm = 6371;
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lon - a.lon);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return 2 * earthRadiusKm * Math.asin(Math.sqrt(h));
 }
 
 function App() {
@@ -122,6 +146,20 @@ function App() {
     waistCm: "",
     chestCm: ""
   });
+  const [gpsTracking, setGpsTracking] = useState(false);
+  const [gpsError, setGpsError] = useState("");
+  const [gpsDurationSec, setGpsDurationSec] = useState(0);
+  const [gpsDistanceKm, setGpsDistanceKm] = useState(0);
+  const [gpsPoints, setGpsPoints] = useState<GpsPoint[]>([]);
+  const [gpsLapSplits, setGpsLapSplits] = useState<number[]>([]);
+
+  const gpsWatchIdRef = useRef<number | null>(null);
+  const gpsTimerIdRef = useRef<number | null>(null);
+  const gpsDistanceRef = useRef(0);
+  const gpsDurationRef = useRef(0);
+  const gpsLastLapKmRef = useRef(0);
+  const gpsLapStartSecRef = useRef(0);
+  const gpsLapSplitsRef = useRef<number[]>([]);
 
   const latestWeight = useMemo(() => {
     const latest = weights[weights.length - 1];
@@ -202,6 +240,17 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (gpsWatchIdRef.current !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(gpsWatchIdRef.current);
+      }
+      if (gpsTimerIdRef.current !== null) {
+        window.clearInterval(gpsTimerIdRef.current);
+      }
+    };
+  }, []);
+
   async function handleFoodSubmit(e: FormEvent) {
     e.preventDefault();
     const result = await apiPost("/diet/foods", {
@@ -253,6 +302,138 @@ function App() {
       setStatusLine("Run entry queued for sync.");
     }
     setRunForm({ distanceKm: "", durationSec: "", notes: "" });
+    await loadEverything();
+  }
+
+  function resetGpsSessionState() {
+    gpsDistanceRef.current = 0;
+    gpsDurationRef.current = 0;
+    gpsLastLapKmRef.current = 0;
+    gpsLapStartSecRef.current = 0;
+    gpsLapSplitsRef.current = [];
+    setGpsDistanceKm(0);
+    setGpsDurationSec(0);
+    setGpsPoints([]);
+    setGpsLapSplits([]);
+  }
+
+  function startGpsRun() {
+    if (gpsTracking) return;
+    if (!navigator.geolocation) {
+      setGpsError("Geolocation is not supported in this browser.");
+      return;
+    }
+
+    setGpsError("");
+    resetGpsSessionState();
+    setGpsTracking(true);
+    setStatusLine("GPS run started.");
+
+    gpsTimerIdRef.current = window.setInterval(() => {
+      gpsDurationRef.current += 1;
+      setGpsDurationSec(gpsDurationRef.current);
+    }, 1000);
+
+    gpsWatchIdRef.current = navigator.geolocation.watchPosition(
+      (position) => {
+        const point: GpsPoint = {
+          lat: position.coords.latitude,
+          lon: position.coords.longitude,
+          timestamp: position.timestamp
+        };
+
+        setGpsPoints((previous) => {
+          if (previous.length === 0) {
+            return [point];
+          }
+          const lastPoint = previous[previous.length - 1];
+          const segmentKm = haversineDistanceKm(lastPoint, point);
+          if (!Number.isFinite(segmentKm) || segmentKm <= 0.005) {
+            return previous;
+          }
+
+          const nextDistance = gpsDistanceRef.current + segmentKm;
+          gpsDistanceRef.current = nextDistance;
+          setGpsDistanceKm(Number(nextDistance.toFixed(3)));
+
+          const completedKm = Math.floor(nextDistance);
+          while (gpsLastLapKmRef.current < completedKm) {
+            const lapDuration = gpsDurationRef.current - gpsLapStartSecRef.current;
+            if (lapDuration > 0) {
+              gpsLapSplitsRef.current = [...gpsLapSplitsRef.current, lapDuration];
+              setGpsLapSplits(gpsLapSplitsRef.current);
+            }
+            gpsLastLapKmRef.current += 1;
+            gpsLapStartSecRef.current = gpsDurationRef.current;
+          }
+
+          return [...previous, point];
+        });
+      },
+      (error) => {
+        if (gpsWatchIdRef.current !== null && navigator.geolocation) {
+          navigator.geolocation.clearWatch(gpsWatchIdRef.current);
+          gpsWatchIdRef.current = null;
+        }
+        if (gpsTimerIdRef.current !== null) {
+          window.clearInterval(gpsTimerIdRef.current);
+          gpsTimerIdRef.current = null;
+        }
+        setGpsTracking(false);
+        setGpsError(`GPS error: ${error.message}`);
+        setStatusLine("GPS tracking stopped due to location error.");
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 10000
+      }
+    );
+  }
+
+  async function stopGpsRun() {
+    if (!gpsTracking) return;
+    setGpsTracking(false);
+
+    if (gpsWatchIdRef.current !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(gpsWatchIdRef.current);
+      gpsWatchIdRef.current = null;
+    }
+    if (gpsTimerIdRef.current !== null) {
+      window.clearInterval(gpsTimerIdRef.current);
+      gpsTimerIdRef.current = null;
+    }
+
+    if (gpsDistanceRef.current < 0.1 || gpsDurationRef.current < 10) {
+      setStatusLine("GPS run stopped. Not saved because distance/time was too low.");
+      return;
+    }
+
+    const runResult = await apiPost<{ runId: string }>("/exercise/runs", {
+      distanceKm: Number(gpsDistanceRef.current.toFixed(2)),
+      durationSec: gpsDurationRef.current,
+      notes: `GPS live run (${gpsPoints.length} points)`
+    });
+
+    if (isQueuedResponse(runResult)) {
+      setStatusLine("GPS run queued for sync. Lap splits will need manual review.");
+      return;
+    }
+
+    const runId = runResult.runId;
+    for (let i = 0; i < gpsLapSplitsRef.current.length; i += 1) {
+      await apiPost(`/exercise/runs/${runId}/laps`, {
+        lapNumber: i + 1,
+        lapDistanceKm: 1,
+        lapDurationSec: gpsLapSplitsRef.current[i]
+      });
+    }
+
+    setStatusLine(
+      `GPS run saved: ${gpsDistanceRef.current.toFixed(2)} km in ${formatDuration(
+        gpsDurationRef.current
+      )}.`
+    );
     await loadEverything();
   }
 
@@ -555,6 +736,50 @@ function App() {
 
         {activeTab === "exercise" ? (
           <section className="grid gap-4 md:grid-cols-2">
+            <div className="panel-block md:col-span-2">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="font-display text-xl">Live GPS Run</h2>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    className="btn"
+                    disabled={gpsTracking}
+                    onClick={startGpsRun}
+                    type="button"
+                  >
+                    Start tracking
+                  </button>
+                  <button
+                    className="btn-secondary"
+                    disabled={!gpsTracking}
+                    onClick={() => void stopGpsRun()}
+                    type="button"
+                  >
+                    Stop & save
+                  </button>
+                </div>
+              </div>
+              <p className="mt-2 text-sm text-muted">
+                {gpsTracking
+                  ? "Tracking in progress. Keep the screen on for best accuracy."
+                  : "Use this when you want auto distance and 1 km lap splits."}
+              </p>
+              {gpsError ? <p className="mt-2 text-sm text-alert">{gpsError}</p> : null}
+              <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4">
+                <Card title="Distance" value={`${gpsDistanceKm.toFixed(2)} km`} />
+                <Card title="Duration" value={formatDuration(gpsDurationSec)} />
+                <Card title="GPS points" value={String(gpsPoints.length)} />
+                <Card title="Laps (1 km)" value={String(gpsLapSplits.length)} />
+              </div>
+              {gpsLapSplits.length > 0 ? (
+                <div className="mt-4 grid gap-2 md:grid-cols-3">
+                  {gpsLapSplits.map((lapSec, index) => (
+                    <div key={`gps-lap-${index + 1}`} className="rounded-lg bg-canvas p-2 text-sm">
+                      Km {index + 1}: {formatDuration(lapSec)}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
             <div className="panel-block">
               <h2 className="font-display text-xl">Jog Tracking</h2>
               <form className="mt-4 grid gap-2" onSubmit={handleRunSubmit}>
