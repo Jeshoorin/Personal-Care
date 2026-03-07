@@ -23,3 +23,9 @@ Personal health assistant PWA with React + Node.js, Google OAuth, Google Sheets 
 - `npm run dev`: run API and web in parallel
 - `npm run build`: build shared package, API, and web
 - `npm run test`: run shared + API tests
+
+## CI/CD
+
+- CI workflow: `.github/workflows/ci.yml`
+- CD workflow: `.github/workflows/cd.yml`
+- Full setup guide: [`docs/CI_CD_SETUP.md`](docs/CI_CD_SETUP.md)

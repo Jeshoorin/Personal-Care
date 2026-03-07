@@ -9,7 +9,8 @@ dotenv.config({ path: envPath });
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  API_PORT: z.coerce.number().default(4000),
+  PORT: z.coerce.number().optional(),
+  API_PORT: z.coerce.number().optional(),
   API_BASE_URL: z.string().url().default("http://localhost:4000"),
   WEB_ORIGIN: z.string().url().default("http://localhost:5173"),
 
@@ -31,9 +32,11 @@ const envSchema = z.object({
 });
 
 const parsed = envSchema.parse(process.env);
+const resolvedPort = parsed.PORT ?? parsed.API_PORT ?? 4000;
 
 export const env = {
   ...parsed,
+  API_PORT: resolvedPort,
   hasGoogleOAuth:
     Boolean(parsed.GOOGLE_CLIENT_ID) &&
     Boolean(parsed.GOOGLE_CLIENT_SECRET) &&
