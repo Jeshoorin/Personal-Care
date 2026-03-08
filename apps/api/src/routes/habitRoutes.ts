@@ -1,9 +1,17 @@
 import { Router } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { z } from "zod";
+import { localDateInTimeZone } from "../lib/date.js";
 import { requireAuth } from "../middleware/auth.js";
-import { SheetsService } from "../services/sheetsService.js";
 import { GamificationService } from "../services/gamificationService.js";
+import { SheetsService } from "../services/sheetsService.js";
+import {
+  parseUserSettings,
+  validateWeeklyCheckin
+} from "../services/weeklyCheckinService.js";
+
+type HabitSheetsPort = Pick<SheetsService, "listRows" | "appendRow">;
+type HabitGamificationPort = Pick<GamificationService, "recordScoreEvent">;
 
 const metricSchema = z.object({
   weightKg: z.coerce.number().positive(),
@@ -38,8 +46,8 @@ const STARTER_HABITS = [
 ] as const;
 
 export function createHabitRoutes(
-  sheetsService: SheetsService,
-  gamificationService: GamificationService
+  sheetsService: HabitSheetsPort,
+  gamificationService: HabitGamificationPort
 ) {
   const router = Router();
   router.use(requireAuth);
@@ -57,7 +65,22 @@ export function createHabitRoutes(
       return;
     }
     const user = req.user!;
+    const localDate = localDateInTimeZone(user.timezone);
+    const existingMetrics = await sheetsService.listRows(user, "BodyMetrics");
+    const settings = parseUserSettings(user.settingsJson);
+    const validation = validateWeeklyCheckin(localDate, existingMetrics, settings);
+    if (!validation.allowed) {
+      res.status(409).json({
+        error: validation.reason ?? "Weekly check-in is not allowed today.",
+        checkinDay: validation.checkinDay,
+        nextAllowedDate: validation.nextAllowedDate ?? null,
+        strictWeeklyCheckin: settings.strictWeeklyCheckin
+      });
+      return;
+    }
+
     await sheetsService.appendRow(user, "BodyMetrics", {
+      local_date: localDate,
       weight_kg: parsed.data.weightKg,
       waist_cm: parsed.data.waistCm ?? "",
       chest_cm: parsed.data.chestCm ?? "",

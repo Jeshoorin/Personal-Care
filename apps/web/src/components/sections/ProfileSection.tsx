@@ -1,10 +1,12 @@
 import type { Dispatch, FormEventHandler, SetStateAction } from "react";
 import type {
+  CoachInsights,
   GenericRow,
   MetricFormState,
   MetricTrendRow,
   Scoreboard,
   StreakData,
+  UserSettings,
   WeeklyInsights
 } from "../../types/app";
 import { Card } from "../ui/Card";
@@ -15,6 +17,10 @@ interface ProfileSectionProps {
   scoreboard: Scoreboard | null;
   streaks: StreakData;
   weeklyInsights: WeeklyInsights | null;
+  coachInsights: CoachInsights | null;
+  settings: UserSettings;
+  setSettings: Dispatch<SetStateAction<UserSettings>>;
+  handleSettingsSubmit: FormEventHandler<HTMLFormElement>;
   metricForm: MetricFormState;
   setMetricForm: Dispatch<SetStateAction<MetricFormState>>;
   handleMetricSubmit: FormEventHandler<HTMLFormElement>;
@@ -27,6 +33,10 @@ export function ProfileSection({
   scoreboard,
   streaks,
   weeklyInsights,
+  coachInsights,
+  settings,
+  setSettings,
+  handleSettingsSubmit,
   metricForm,
   setMetricForm,
   handleMetricSubmit,
@@ -79,6 +89,73 @@ export function ProfileSection({
         ) : (
           <p className="mt-3 text-sm text-muted">No weekly insight data yet.</p>
         )}
+      </div>
+      <div className="panel-block">
+        <h2 className="font-display text-xl">Predictive Coaching</h2>
+        {coachInsights ? (
+          <>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+              <div className="rounded-lg bg-canvas p-2">
+                Trend: {coachInsights.weeklyWeightTrendKg > 0 ? "+" : ""}
+                {coachInsights.weeklyWeightTrendKg.toFixed(2)} kg/week
+              </div>
+              <div className="rounded-lg bg-canvas p-2">
+                4-week forecast: {coachInsights.predictedWeight4WeeksKg.toFixed(2)} kg
+              </div>
+              <div className="rounded-lg bg-canvas p-2">
+                Confidence: {coachInsights.confidencePercent}%
+              </div>
+              <div className="rounded-lg bg-canvas p-2">
+                Target ETA: {coachInsights.estimatedTargetDate ?? "Not enough trend data"}
+              </div>
+            </div>
+            <div className="mt-3 space-y-2 text-sm">
+              {coachInsights.coachingTips.map((tip, idx) => (
+                <div key={`tip-${idx}`} className="rounded-lg bg-canvas p-2 text-muted">
+                  {tip}
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="mt-3 text-sm text-muted">Coach insights will appear after enough logs.</p>
+        )}
+      </div>
+      <div className="panel-block">
+        <h2 className="font-display text-xl">Weekly Check-in Rules</h2>
+        <form className="mt-4 grid gap-2" onSubmit={handleSettingsSubmit}>
+          <select
+            className="field"
+            value={settings.weeklyCheckinDay}
+            onChange={(e) =>
+              setSettings((prev) => ({
+                ...prev,
+                weeklyCheckinDay: e.target.value as UserSettings["weeklyCheckinDay"]
+              }))
+            }
+          >
+            <option value="monday">Monday</option>
+            <option value="tuesday">Tuesday</option>
+            <option value="wednesday">Wednesday</option>
+            <option value="thursday">Thursday</option>
+            <option value="friday">Friday</option>
+            <option value="saturday">Saturday</option>
+            <option value="sunday">Sunday</option>
+          </select>
+          <label className="inline-flex items-center gap-2 text-sm text-muted">
+            <input
+              checked={settings.strictWeeklyCheckin}
+              onChange={(e) =>
+                setSettings((prev) => ({ ...prev, strictWeeklyCheckin: e.target.checked }))
+              }
+              type="checkbox"
+            />
+            Strict lock (only selected weekday)
+          </label>
+          <button className="btn" type="submit">
+            Save check-in settings
+          </button>
+        </form>
       </div>
       <div className="panel-block md:col-span-2">
         <h2 className="font-display text-xl">Weekly Body Check-in</h2>

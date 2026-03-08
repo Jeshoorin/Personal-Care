@@ -39,7 +39,7 @@ export async function createApp() {
   app.use("/diet", createDietRoutes(sheetsService, gamificationService));
   app.use("/exercise", createExerciseRoutes(sheetsService, gamificationService));
   app.use("/", createHabitRoutes(sheetsService, gamificationService));
-  app.use("/profile", createProfileRoutes(sheetsService, gamificationService));
+  app.use("/profile", createProfileRoutes(metadataStore, sheetsService, gamificationService));
   app.use("/", createReminderRoutes(metadataStore, sheetsService, gamificationService));
 
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

@@ -38,6 +38,12 @@ export class MemoryStore implements MetadataStore {
     this.users.set(userId, { ...user, spreadsheetId, updatedAt: new Date().toISOString() });
   }
 
+  async updateUserSettings(userId: string, settingsJson: string): Promise<void> {
+    const user = this.users.get(userId);
+    if (!user) return;
+    this.users.set(userId, { ...user, settingsJson, updatedAt: new Date().toISOString() });
+  }
+
   async getUserByUserId(userId: string): Promise<UserMetadata | null> {
     return this.users.get(userId) ?? null;
   }

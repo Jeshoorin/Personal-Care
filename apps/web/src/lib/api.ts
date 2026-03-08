@@ -2,6 +2,22 @@ import { offlineDb } from "./offlineDb";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000";
 
+export class ApiError extends Error {
+  public readonly status: number;
+  public readonly body: string;
+
+  constructor(
+    message: string,
+    status: number,
+    body: string
+  ) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
 function cacheKey(path: string) {
   return `pc-cache:${path}`;
 }
@@ -21,7 +37,7 @@ async function request<T>(
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || `Request failed: ${response.status}`);
+    throw new ApiError(text || `Request failed: ${response.status}`, response.status, text);
   }
   if (response.status === 204) {
     return {} as T;
@@ -62,7 +78,10 @@ export async function apiPost<T>(
       method: "POST",
       body: JSON.stringify(payload)
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
+      throw error;
+    }
     await offlineDb.outbox.add({
       path,
       method: "POST",

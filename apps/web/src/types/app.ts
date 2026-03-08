@@ -37,6 +37,31 @@ export interface WeeklyInsights {
   goalType: "deficit" | "surplus" | "maintenance";
 }
 
+export interface CoachInsights {
+  goalType: "deficit" | "surplus" | "maintenance";
+  latestWeightKg: number;
+  targetWeightKg: number;
+  weeklyWeightTrendKg: number;
+  predictedWeight4WeeksKg: number;
+  estimatedTargetDate: string | null;
+  confidencePercent: number;
+  thisPeriodDistanceKm: number;
+  previousPeriodDistanceKm: number;
+  coachingTips: string[];
+}
+
+export interface UserSettings {
+  weeklyCheckinDay:
+    | "monday"
+    | "tuesday"
+    | "wednesday"
+    | "thursday"
+    | "friday"
+    | "saturday"
+    | "sunday";
+  strictWeeklyCheckin: boolean;
+}
+
 export interface DietSummaryResponse extends DailyEnergySummary {
   tdee: number;
   safetyWarnings: string[];

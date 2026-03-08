@@ -34,6 +34,7 @@ export interface MetadataStore {
   init(): Promise<void>;
   upsertUser(input: UpsertUserInput): Promise<UserMetadata>;
   updateSpreadsheetId(userId: string, spreadsheetId: string): Promise<void>;
+  updateUserSettings(userId: string, settingsJson: string): Promise<void>;
   getUserByUserId(userId: string): Promise<UserMetadata | null>;
   getUserByGoogleSub(googleSub: string): Promise<UserMetadata | null>;
   listUsers(): Promise<UserMetadata[]>;

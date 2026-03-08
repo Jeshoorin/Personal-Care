@@ -6,9 +6,10 @@ import { ExerciseSection } from "./components/sections/ExerciseSection";
 import { ProfileSection } from "./components/sections/ProfileSection";
 import { RoutineSection } from "./components/sections/RoutineSection";
 import { Card } from "./components/ui/Card";
-import { apiGet, apiPost, syncOutbox, API_BASE_URL } from "./lib/api";
+import { ApiError, apiGet, apiPost, syncOutbox, API_BASE_URL } from "./lib/api";
 import { registerPush } from "./lib/push";
 import type {
+  CoachInsights,
   DietSummaryResponse,
   GenericRow,
   GoalFormState,
@@ -23,6 +24,7 @@ import type {
   Scoreboard,
   StreakData,
   TabKey,
+  UserSettings,
   WeeklyInsights,
   WorkoutFormState,
   FoodFormState
@@ -85,6 +87,11 @@ function App() {
   const [scoreboard, setScoreboard] = useState<Scoreboard | null>(null);
   const [streaks, setStreaks] = useState<StreakData>({ current: 0, longest: 0 });
   const [weeklyInsights, setWeeklyInsights] = useState<WeeklyInsights | null>(null);
+  const [coachInsights, setCoachInsights] = useState<CoachInsights | null>(null);
+  const [settings, setSettings] = useState<UserSettings>({
+    weeklyCheckinDay: "monday",
+    strictWeeklyCheckin: true
+  });
   const [metrics, setMetrics] = useState<GenericRow[]>([]);
   const [foodSearch, setFoodSearch] = useState<GenericRow[]>([]);
 
@@ -182,6 +189,8 @@ function App() {
         scoreData,
         streakData,
         weeklyData,
+        coachData,
+        settingsData,
         metricData
       ] = await Promise.all([
         apiGet<DietSummaryResponse>("/diet/summary"),
@@ -194,6 +203,8 @@ function App() {
         apiGet<Scoreboard>("/profile/scoreboard"),
         apiGet<StreakData>("/profile/streaks"),
         apiGet<WeeklyInsights>("/profile/weekly-insights"),
+        apiGet<CoachInsights>("/profile/coach-insights"),
+        apiGet<UserSettings>("/profile/settings"),
         apiGet<GenericRow[]>("/metrics/body")
       ]);
 
@@ -207,6 +218,8 @@ function App() {
       setScoreboard(scoreData);
       setStreaks(streakData);
       setWeeklyInsights(weeklyData);
+      setCoachInsights(coachData);
+      setSettings(settingsData);
       setMetrics(metricData);
     } catch {
       setMe(null);
@@ -548,26 +561,62 @@ function App() {
 
   async function handleMetricSubmit(e: FormEvent) {
     e.preventDefault();
-    const result = await apiPost("/metrics/body", {
-      weightKg: Number(metricForm.weightKg),
-      waistCm: metricForm.waistCm ? Number(metricForm.waistCm) : undefined,
-      chestCm: metricForm.chestCm ? Number(metricForm.chestCm) : undefined,
-      hipCm: metricForm.hipCm ? Number(metricForm.hipCm) : undefined,
-      thighCm: metricForm.thighCm ? Number(metricForm.thighCm) : undefined,
-      armCm: metricForm.armCm ? Number(metricForm.armCm) : undefined
-    });
-    if (isQueuedResponse(result)) {
-      setStatusLine("Body metrics queued for sync.");
+    try {
+      const result = await apiPost("/metrics/body", {
+        weightKg: Number(metricForm.weightKg),
+        waistCm: metricForm.waistCm ? Number(metricForm.waistCm) : undefined,
+        chestCm: metricForm.chestCm ? Number(metricForm.chestCm) : undefined,
+        hipCm: metricForm.hipCm ? Number(metricForm.hipCm) : undefined,
+        thighCm: metricForm.thighCm ? Number(metricForm.thighCm) : undefined,
+        armCm: metricForm.armCm ? Number(metricForm.armCm) : undefined
+      });
+      if (isQueuedResponse(result)) {
+        setStatusLine("Body metrics queued for sync.");
+      } else {
+        setStatusLine("Weekly body check-in saved.");
+      }
+      setMetricForm({
+        weightKg: "",
+        waistCm: "",
+        chestCm: "",
+        hipCm: "",
+        thighCm: "",
+        armCm: ""
+      });
+      await loadEverything();
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        try {
+          const details = JSON.parse(error.body) as {
+            error?: string;
+            nextAllowedDate?: string | null;
+          };
+          const datePart = details.nextAllowedDate
+            ? ` Next allowed date: ${details.nextAllowedDate}.`
+            : "";
+          setStatusLine(`${details.error ?? "Weekly check-in not allowed today."}${datePart}`);
+          return;
+        } catch {
+          setStatusLine("Weekly check-in is locked. Adjust check-in settings in Profile.");
+          return;
+        }
+      }
+      throw error;
     }
-    setMetricForm({
-      weightKg: "",
-      waistCm: "",
-      chestCm: "",
-      hipCm: "",
-      thighCm: "",
-      armCm: ""
-    });
-    await loadEverything();
+  }
+
+  async function handleSettingsSubmit(e: FormEvent) {
+    e.preventDefault();
+    const result = await apiPost<UserSettings>(
+      "/profile/settings",
+      settings as unknown as Record<string, unknown>
+    );
+    if (isQueuedResponse(result)) {
+      setStatusLine("Settings queued for sync.");
+      return;
+    }
+    setSettings(result);
+    setStatusLine("Weekly check-in settings saved.");
   }
 
   async function enablePushNotifications() {
@@ -815,6 +864,10 @@ function App() {
             scoreboard={scoreboard}
             streaks={streaks}
             weeklyInsights={weeklyInsights}
+            coachInsights={coachInsights}
+            settings={settings}
+            setSettings={setSettings}
+            handleSettingsSubmit={handleSettingsSubmit}
             metricForm={metricForm}
             setMetricForm={setMetricForm}
             handleMetricSubmit={handleMetricSubmit}

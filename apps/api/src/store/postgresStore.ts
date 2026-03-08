@@ -89,6 +89,13 @@ export class PostgresStore implements MetadataStore {
     );
   }
 
+  async updateUserSettings(userId: string, settingsJson: string): Promise<void> {
+    await this.pool.query(
+      "UPDATE users SET settings_json = $2, updated_at = NOW() WHERE user_id = $1",
+      [userId, settingsJson]
+    );
+  }
+
   async getUserByUserId(userId: string): Promise<UserMetadata | null> {
     const result = await this.pool.query<UserMetadata>(
       `
